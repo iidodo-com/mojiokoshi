@@ -1,4 +1,4 @@
-const CACHE = "mojiokoshi-v5";
+const CACHE = "mojiokoshi-v6";
 const ASSETS = [
   "./",
   "./index.html",

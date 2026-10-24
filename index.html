@@ -207,7 +207,7 @@
     <div id="result"></div>
   </section>
 
-  <footer>Powered by Gemini API（無料枠）。長い音声は数十分までが目安です。<br>アプリの版: v5</footer>
+  <footer>Powered by Gemini API（無料枠）。長い音声は数十分までが目安です。<br>アプリの版: v6</footer>
 </div>
 
 <script>
@@ -349,6 +349,28 @@ async function uploadViaFilesApi(f, apiKey, mime) {
   return fileObj;
 }
 
+// ---- audio volume check (too-quiet audio invites fabrication) ----
+async function audioLevel(file) {
+  try {
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if (!AC) return null;
+    const buf = await file.arrayBuffer();
+    const ctx = new AC();
+    const audio = await ctx.decodeAudioData(buf.slice(0));
+    const ch = audio.getChannelData(0);
+    let peak = 0;
+    const step = Math.max(1, Math.floor(ch.length / 200000));
+    for (let i = 0; i < ch.length; i += step) {
+      const v = Math.abs(ch[i]);
+      if (v > peak) peak = v;
+    }
+    ctx.close();
+    return { peak: peak };
+  } catch (e) {
+    return null;
+  }
+}
+
 // ---- main ----
 async function generate(apiKey, model, parts) {
   const base = "https://generativelanguage.googleapis.com/v1beta/models/" + encodeURIComponent(model) + ":generateContent";
@@ -400,7 +422,7 @@ function buildPrompt() {
   if ($("optTodo").checked) sections.push("## 決定事項・ToDo\n決まったことと、宿題（担当者や期限が分かれば併記）を箇条書きで挙げてください。無ければ「特になし」と書いてください。");
   return "あなたは日本語の会議音声の文字起こし担当です。添付の音声を処理し、Markdown形式で、以下のセクション構成で出力してください。\n\n"
     + sections.join("\n\n")
-    + "\n\n注意: 推測で内容を補わないでください。聞き取れない箇所は「（聞き取り不能）」と書いてください。セクションの見出しは指定どおりに書いてください。";
+    + "\n\n注意: 推測で内容を補わないでください。聞き取れない箇所は「（聞き取り不能）」と書いてください。音声全体が聞き取れない・無音に近い場合は、会議の内容を創作せず、「## 文字起こし」の欄に「聞き取れませんでした」とだけ書いてください。セクションの見出しは指定どおりに書いてください。";
 }
 
 $("run").addEventListener("click", async () => {
@@ -412,6 +434,14 @@ $("run").addEventListener("click", async () => {
   btn.disabled = true;
   resultCard.classList.add("hidden");
   try {
+    if (selectedFile.size <= 20 * 1024 * 1024) {
+      setStatus("音量を確認しています…");
+      const lv = await audioLevel(selectedFile);
+      if (lv && lv.peak < 0.05) {
+        const ok = confirm("音量がかなり小さいようです。音が聞き取れないと、モデルが内容を作ってしまうことがあります。録音した音声は、先にプレビューで声が聞こえるか確認してください。このまま実行しますか？");
+        if (!ok) { setStatus("中止しました。音量を上げてから再試行してください。", true); return; }
+      }
+    }
     const mime = mimeOf(selectedFile);
     const prompt = buildPrompt();
     let parts;
@@ -605,7 +635,7 @@ function livePrompt(prevTail) {
   const sp = $("liveSpeakers").checked
     ? "話者を聞き分け、「話者1:」「話者2:」のように分けてください。前後の区間と話者番号がなるべく一致するよう、直前の内容も参考にしてください。"
     : "話者の区別は付けないでください。";
-  let p = "あなたは日本語音声の文字起こし担当です。添付の短い音声を、発言のまま日本語で書き起こしてください。本文だけを出力し、見出しや説明は付けないでください。聞き取れない場合は「（聞き取り不能）」としてください。" + sp;
+  let p = "あなたは日本語音声の文字起こし担当です。添付の短い音声を、発言のまま日本語で書き起こしてください。本文だけを出力し、見出しや説明は付けないでください。聞き取れない場合は「（聞き取り不能）」としてください。音声が判別できないときは、内容を推測で作らないでください。" + sp;
   if (prevTail) p += "\n直前の区間の書き起こし末尾（文脈の参考）: " + prevTail;
   return p;
 }
