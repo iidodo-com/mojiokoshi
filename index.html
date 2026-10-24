@@ -147,6 +147,7 @@
     <div class="row">
       <button type="button" id="recStart">● 録音開始</button>
       <button type="button" id="recStop" class="sub" disabled>停止</button>
+      <button type="button" id="recPerm" class="sub">マイクの許可を求める</button>
       <span id="recState" class="note" style="align-self: center;"></span>
     </div>
     <audio id="recPreview" controls class="hidden"></audio>
@@ -181,6 +182,7 @@
     <div class="row">
       <button type="button" id="liveStart">開始</button>
       <button type="button" id="liveStop" class="sub" disabled>終了</button>
+      <button type="button" id="livePerm" class="sub">マイクの許可を求める</button>
       <span id="liveState" class="note" style="align-self: center;"></span>
     </div>
     <div id="liveOut"></div>
@@ -437,6 +439,36 @@ $("dlTxt").addEventListener("click", () => download(baseName() + ".txt", lastRes
 // ---- file:// warning ----
 if (location.protocol === "file:") $("fileWarn").classList.remove("hidden");
 
+// ---- microphone permission ----
+function micErrorMessage(e) {
+  const name = e && e.name ? e.name : "";
+  if (location.protocol === "file:") {
+    return "この開き方（ダウンロードしたファイルを直接表示）では、マイクの許可ダイアログ自体が出せません。公開URL（https://iidodo-com.github.io/mojiokoshi/）から開くか、ホーム画面にインストールしたアプリで試してください。";
+  }
+  if (name === "NotAllowedError") {
+    return "マイクが許可されませんでした。ブラウザのサイト設定（アドレスバー横のアイコン→「権限」）で、このサイトのマイクを「許可」にしてから、もう一度「マイクの許可を求める」を押してください。";
+  }
+  if (name === "NotFoundError" || name === "OverconstrainedError") {
+    return "使えるマイクが見つかりませんでした。マイク付きの機器で試してください。";
+  }
+  return "マイクを使えませんでした（" + (name || "不明なエラー") + "）。公開URL（https）で開いているか確認してください。";
+}
+async function requestMicPermission() {
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+    setStatus(micErrorMessage(null), true);
+    return;
+  }
+  try {
+    const s = await navigator.mediaDevices.getUserMedia({ audio: true });
+    s.getTracks().forEach((t) => t.stop());
+    setStatus("マイクの許可が得られました。「録音開始」やリアルタイムの「開始」を押してください。");
+  } catch (e) {
+    setStatus(micErrorMessage(e), true);
+  }
+}
+$("recPerm").addEventListener("click", requestMicPermission);
+$("livePerm").addEventListener("click", requestMicPermission);
+
 // ---- audio conversion helpers ----
 async function blobToWav(blob) {
   const buf = await blob.arrayBuffer();
@@ -500,7 +532,7 @@ $("recStart").addEventListener("click", async () => {
   try {
     recStream = await navigator.mediaDevices.getUserMedia({ audio: true });
   } catch (e) {
-    setStatus("マイクを使えませんでした。ブラウザのマイク許可を確認してください。", true);
+    setStatus(micErrorMessage(e), true);
     return;
   }
   recChunks = [];
@@ -573,7 +605,7 @@ $("liveStart").addEventListener("click", async () => {
   try {
     liveStream = await navigator.mediaDevices.getUserMedia({ audio: true });
   } catch (e) {
-    setStatus("マイクを使えませんでした。ブラウザのマイク許可を確認してください。", true);
+    setStatus(micErrorMessage(e), true);
     return;
   }
   liveActive = true;
