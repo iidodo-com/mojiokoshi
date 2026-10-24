@@ -1,0 +1,695 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>文字起こしアプリ</title>
+<meta name="theme-color" content="#1a73e8">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="文字起こし">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
+<link rel="apple-touch-icon" href="icon-180.png">
+<style>
+  :root {
+    --bg: #f6f7f9;
+    --card: #ffffff;
+    --text: #1f2328;
+    --sub: #57606a;
+    --accent: #1a73e8;
+    --accent-dark: #1557b0;
+    --border: #d8dee4;
+    --error: #b3261e;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Hiragino Kaku Gothic ProN", "Noto Sans JP", sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.7;
+  }
+  .wrap { max-width: 760px; margin: 0 auto; padding: 16px; }
+  header { padding: 12px 4px 4px; }
+  h1 { font-size: 22px; margin: 0 0 4px; }
+  .lead { color: var(--sub); font-size: 14px; margin: 0; }
+  .card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 16px;
+    margin-top: 16px;
+  }
+  .card h2 { font-size: 16px; margin: 0 0 10px; }
+  label { display: block; font-size: 14px; font-weight: 600; margin-top: 12px; }
+  label:first-of-type { margin-top: 0; }
+  input[type="password"], input[type="text"] {
+    width: 100%;
+    padding: 10px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    font-size: 15px;
+    margin-top: 4px;
+  }
+  .note { font-size: 12px; color: var(--sub); margin-top: 6px; }
+  .note a { color: var(--accent); }
+  button {
+    appearance: none;
+    border: none;
+    border-radius: 8px;
+    padding: 10px 16px;
+    font-size: 15px;
+    font-weight: 600;
+    cursor: pointer;
+    background: var(--accent);
+    color: #fff;
+  }
+  button:hover { background: var(--accent-dark); }
+  button:disabled { background: #a8c7fa; cursor: not-allowed; }
+  button.sub {
+    background: #eef1f4;
+    color: var(--text);
+    border: 1px solid var(--border);
+  }
+  button.sub:hover { background: #e3e8ed; }
+  .row { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
+  .drop {
+    border: 2px dashed var(--border);
+    border-radius: 12px;
+    padding: 20px;
+    text-align: center;
+    color: var(--sub);
+    font-size: 14px;
+    cursor: pointer;
+  }
+  .drop.over { border-color: var(--accent); color: var(--accent); }
+  .fileinfo { font-size: 14px; margin-top: 10px; word-break: break-all; }
+  .checks { margin-top: 12px; }
+  .checks label { font-weight: 400; margin-top: 6px; display: flex; align-items: center; gap: 8px; }
+  .checks input[type="checkbox"] { width: 18px; height: 18px; }
+  #status { font-size: 14px; margin-top: 12px; min-height: 1.5em; }
+  #status.error { color: var(--error); white-space: pre-wrap; }
+  #result {
+    white-space: pre-wrap;
+    word-break: break-word;
+    font-size: 15px;
+    background: #fbfcfd;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 12px;
+    margin-top: 8px;
+  }
+  #result:empty { display: none; }
+  .hidden { display: none; }
+  .warn { background: #fff4e5; border: 1px solid #e8a33d; color: #7a4d00; border-radius: 8px; padding: 10px 12px; font-size: 13px; margin-top: 16px; }
+  .recdot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; background: #d93025; margin-right: 6px; animation: blink 1.2s infinite; vertical-align: middle; }
+  @keyframes blink { 0%, 100% { opacity: 1; } 50% { opacity: .25; } }
+  audio { width: 100%; margin-top: 8px; }
+  select { padding: 8px; border: 1px solid var(--border); border-radius: 8px; font-size: 14px; background: #fff; }
+  #liveOut { white-space: pre-wrap; word-break: break-word; background: #fafbfc; border: 1px solid var(--border); border-radius: 8px; padding: 12px; margin-top: 8px; font-size: 14px; max-height: 50vh; overflow: auto; }
+  #liveOut:empty { display: none; }
+  footer { color: var(--sub); font-size: 12px; text-align: center; padding: 24px 0 8px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>文字起こしアプリ</h1>
+    <p class="lead">録音ファイルを渡すと、Gemini API（無料枠）で文字起こし・整文・要約を作成します。音声はGoogleのAPIに直接送られ、このページ以外に保存されません。</p>
+  </header>
+
+  <div class="warn hidden" id="fileWarn">このページは「ファイルとして直接」開かれています。この開き方ではブラウザの制限で通信が失敗し、「Failed to fetch」エラーになることがあります。公開URL（https://iidodo-com.github.io/mojiokoshi/）から開くか、ホーム画面にインストールして使ってください。</div>
+
+  <section class="card">
+    <h2>設定</h2>
+    <label for="apiKey">Gemini APIキー</label>
+    <input type="password" id="apiKey" placeholder="AIza..." autocomplete="off">
+    <p class="note">キーはこのブラウザ内にのみ保存されます（サーバーやリポジトリには送られません）。取得は <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">Google AI Studio</a> から（Googleアカウントで発行できます）。</p>
+    <label for="model">モデル名</label>
+    <input type="text" id="model" value="gemini-3.8-flash">
+    <p class="note">通常はこのままで構いません。モデルが提供終了になった場合は、新しいモデル名に書き換えてください。</p>
+    <div class="row">
+      <button type="button" id="saveSettings" class="sub">設定を保存</button>
+      <span id="savedMsg" class="note" style="align-self:center;"></span>
+    </div>
+    <div class="row">
+      <button type="button" id="testConn" class="sub">接続テスト</button>
+      <span id="testMsg" class="note" style="align-self:center;"></span>
+    </div>
+    <p class="note">「Failed to fetch」が出るときは、このテストで「端末からGoogleへ届くか」を切り分けできます。</p>
+  </section>
+
+  <section class="card">
+    <h2>音声ファイル</h2>
+    <div class="drop" id="drop">タップして音声ファイルを選ぶ<br>（m4a / mp3 / wav / aac / ogg / flac など）</div>
+    <input type="file" id="fileInput" accept="audio/*" class="hidden">
+    <div class="fileinfo" id="fileInfo"></div>
+
+    <hr style="border: none; border-top: 1px solid var(--border); margin: 16px 0;">
+    <h2 style="font-size: 15px;">その場で録音する</h2>
+    <div class="row">
+      <button type="button" id="recStart">● 録音開始</button>
+      <button type="button" id="recStop" class="sub" disabled>停止</button>
+      <button type="button" id="recPerm" class="sub">マイクの許可を求める</button>
+      <span id="recState" class="note" style="align-self: center;"></span>
+    </div>
+    <audio id="recPreview" controls class="hidden"></audio>
+    <p class="note">録音を停止すると、その音声が上の「選択中」のファイルとしてセットされ、そのまま「文字起こしを実行」できます。録音中は画面を開いたままにしてください。マイクの使用許可が必要です（公開URL＝httpsのページでのみ動作します）。</p>
+
+    <div class="checks">
+      <label><input type="checkbox" id="optSpeakers" checked> 話者を区別する（話者1・話者2…）</label>
+      <label><input type="checkbox" id="optClean" checked> 整文も作る（フィラーを落として読みやすく）</label>
+      <label><input type="checkbox" id="optSummary" checked> 要約も作る</label>
+      <label><input type="checkbox" id="optTodo" checked> 決定事項・ToDoも抽出する</label>
+    </div>
+
+    <div class="row">
+      <button type="button" id="run">文字起こしを実行</button>
+    </div>
+    <div id="status"></div>
+  </section>
+
+  <section class="card">
+    <h2>リアルタイム文字起こし</h2>
+    <p class="note" style="margin-top: 0;">マイクの音声を一定間隔で区切って、順次文字起こしします。会議中のメモ取り用です。区切りごとに送信するため、少し遅れて表示されます。画面を開いたままにしてください。</p>
+    <div class="checks">
+      <label><input type="checkbox" id="liveSpeakers" checked> 話者を区別する</label>
+    </div>
+    <label for="liveInterval">区切る間隔</label>
+    <select id="liveInterval">
+      <option value="20">20秒</option>
+      <option value="30" selected>30秒</option>
+      <option value="45">45秒</option>
+      <option value="60">60秒</option>
+    </select>
+    <div class="row">
+      <button type="button" id="liveStart">開始</button>
+      <button type="button" id="liveStop" class="sub" disabled>終了</button>
+      <button type="button" id="livePerm" class="sub">マイクの許可を求める</button>
+      <span id="liveState" class="note" style="align-self: center;"></span>
+    </div>
+    <div id="liveOut"></div>
+    <div class="row">
+      <button type="button" id="liveCopy" class="sub">全文をコピー</button>
+      <button type="button" id="liveDl" class="sub">.txt で保存</button>
+    </div>
+  </section>
+
+  <section class="card hidden" id="resultCard">
+    <h2>結果</h2>
+    <div class="row" style="margin-top:0;">
+      <button type="button" id="copyBtn" class="sub">全文をコピー</button>
+      <button type="button" id="dlMd" class="sub">.md で保存</button>
+      <button type="button" id="dlTxt" class="sub">.txt で保存</button>
+    </div>
+    <div id="result"></div>
+  </section>
+
+  <footer>Powered by Gemini API（無料枠）。長い音声は数十分までが目安です。<br>アプリの版: v5</footer>
+</div>
+
+<script>
+"use strict";
+const $ = (id) => document.getElementById(id);
+const apiKeyInput = $("apiKey");
+const modelInput = $("model");
+const statusEl = $("status");
+const resultEl = $("result");
+const resultCard = $("resultCard");
+let selectedFile = null;
+let lastResult = "";
+
+// ---- settings ----
+function loadSettings() {
+  const k = localStorage.getItem("gemini_api_key");
+  if (k) apiKeyInput.value = k;
+  const m = localStorage.getItem("gemini_model");
+  if (m) modelInput.value = m;
+}
+$("saveSettings").addEventListener("click", () => {
+  localStorage.setItem("gemini_api_key", apiKeyInput.value.trim());
+  localStorage.setItem("gemini_model", modelInput.value.trim() || "gemini-3.8-flash");
+  $("savedMsg").textContent = "保存しました。";
+  setTimeout(() => { $("savedMsg").textContent = ""; }, 2000);
+});
+loadSettings();
+
+// ---- connection test ----
+$("testConn").addEventListener("click", async () => {
+  const apiKey = apiKeyInput.value.trim();
+  const model = modelInput.value.trim() || "gemini-3.8-flash";
+  const el = $("testMsg");
+  if (!apiKey) { el.textContent = "先にAPIキーを入力してください。"; return; }
+  el.textContent = "テスト中…";
+  try {
+    const r = await fetch("https://generativelanguage.googleapis.com/v1beta/models/" + encodeURIComponent(model) + "?key=" + encodeURIComponent(apiKey), { method: "GET" });
+    if (r.ok) {
+      el.textContent = "接続OK（キーとモデルが有効です）。";
+    } else {
+      let d = "";
+      try { const j = await r.json(); d = j.error && j.error.message ? j.error.message : ""; } catch (e) { /* ignore */ }
+      el.textContent = "応答はありましたがエラーです（" + r.status + "）" + (d ? ": " + d : "");
+    }
+  } catch (e) {
+    el.textContent = "通信できませんでした。この端末・ブラウザからGoogleのAPIへ届いていません。Chromeで開き直す、Wi-Fiを切ってモバイル回線にする、VPNやシールドを切る、を試してください。";
+  }
+});
+
+// ---- file selection ----
+const drop = $("drop");
+const fileInput = $("fileInput");
+drop.addEventListener("click", () => fileInput.click());
+drop.addEventListener("dragover", (e) => { e.preventDefault(); drop.classList.add("over"); });
+drop.addEventListener("dragleave", () => drop.classList.remove("over"));
+drop.addEventListener("drop", (e) => {
+  e.preventDefault();
+  drop.classList.remove("over");
+  if (e.dataTransfer.files.length) setFile(e.dataTransfer.files[0]);
+});
+fileInput.addEventListener("change", () => {
+  if (fileInput.files.length) setFile(fileInput.files[0]);
+});
+function setFile(f) {
+  selectedFile = f;
+  const mb = (f.size / 1024 / 1024).toFixed(1);
+  $("fileInfo").textContent = "選択中: " + f.name + "（" + mb + " MB）";
+}
+function mimeOf(f) {
+  if (f.type) return f.type;
+  const name = (f.name || "").toLowerCase();
+  if (name.endsWith(".m4a")) return "audio/mp4";
+  if (name.endsWith(".mp3")) return "audio/mpeg";
+  if (name.endsWith(".wav")) return "audio/wav";
+  if (name.endsWith(".aac")) return "audio/aac";
+  if (name.endsWith(".ogg")) return "audio/ogg";
+  if (name.endsWith(".flac")) return "audio/flac";
+  if (name.endsWith(".aiff") || name.endsWith(".aif")) return "audio/aiff";
+  return "audio/mp4";
+}
+
+// ---- helpers ----
+function setStatus(msg, isError) {
+  statusEl.textContent = msg || "";
+  statusEl.className = isError ? "error" : "";
+}
+function fileToBase64(f) {
+  return new Promise((resolve, reject) => {
+    const r = new FileReader();
+    r.onload = () => resolve(String(r.result).split(",")[1]);
+    r.onerror = reject;
+    r.readAsDataURL(f);
+  });
+}
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+// ---- Files API (for large files) ----
+async function uploadViaFilesApi(f, apiKey, mime) {
+  const startRes = await fetch("https://generativelanguage.googleapis.com/upload/v1beta/files", {
+    method: "POST",
+    headers: {
+      "x-goog-api-key": apiKey,
+      "X-Goog-Upload-Protocol": "resumable",
+      "X-Goog-Upload-Command": "start",
+      "X-Goog-Upload-Header-Content-Length": String(f.size),
+      "X-Goog-Upload-Header-Content-Type": mime,
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({ file: { display_name: f.name } })
+  });
+  if (!startRes.ok) throw new Error("ファイルアップロードの開始に失敗しました: " + (await startRes.text()));
+  const uploadUrl = startRes.headers.get("x-goog-upload-url");
+  if (!uploadUrl) throw new Error("アップロードURLが取得できませんでした。");
+
+  const upRes = await fetch(uploadUrl, {
+    method: "POST",
+    headers: {
+      "Content-Length": String(f.size),
+      "X-Goog-Upload-Offset": "0",
+      "X-Goog-Upload-Command": "upload, finalize"
+    },
+    body: f
+  });
+  if (!upRes.ok) throw new Error("ファイルのアップロードに失敗しました: " + (await upRes.text()));
+  const info = await upRes.json();
+  let fileObj = info.file;
+  // wait until ACTIVE
+  for (let i = 0; i < 60 && fileObj && fileObj.state === "PROCESSING"; i++) {
+    await sleep(5000);
+    const chk = await fetch("https://generativelanguage.googleapis.com/v1beta/" + fileObj.name, {
+      headers: { "x-goog-api-key": apiKey }
+    });
+    if (!chk.ok) throw new Error("ファイル状態の確認に失敗しました: " + (await chk.text()));
+    fileObj = await chk.json();
+  }
+  if (!fileObj || fileObj.state !== "ACTIVE") {
+    throw new Error("ファイルの処理が完了しませんでした（状態: " + (fileObj ? fileObj.state : "不明") + "）");
+  }
+  return fileObj;
+}
+
+// ---- main ----
+async function generate(apiKey, model, parts) {
+  const base = "https://generativelanguage.googleapis.com/v1beta/models/" + encodeURIComponent(model) + ":generateContent";
+  const body = JSON.stringify({
+    contents: [{ parts: parts }],
+    generationConfig: { maxOutputTokens: 65536 }
+  });
+  const attempts = [
+    { url: base, headers: { "x-goog-api-key": apiKey, "Content-Type": "application/json" } },
+    { url: base, headers: { "x-goog-api-key": apiKey, "Content-Type": "application/json" } },
+    { url: base + "?key=" + encodeURIComponent(apiKey), headers: { "Content-Type": "application/json" } }
+  ];
+  let res = null;
+  for (let i = 0; i < attempts.length; i++) {
+    try {
+      res = await fetch(attempts[i].url, { method: "POST", headers: attempts[i].headers, body: body });
+      break;
+    } catch (e) {
+      if (i < attempts.length - 1) await sleep(1500);
+    }
+  }
+  if (!res) {
+    throw new Error("通信に失敗しました（Failed to fetch）。この端末からGoogleのAPIへ届いていません。対処: (1) Chromeで公開URLを開き直す（アプリ内ブラウザやファイル表示では通信が制限されることがあります） (2) Wi-Fiを切ってモバイル回線で試す (3) VPN・広告ブロック・ブラウザのシールド機能を切る。設定の「接続テスト」でも切り分けできます。");
+  }
+  if (!res.ok) {
+    let detail = await res.text();
+    try {
+      const j = JSON.parse(detail);
+      if (j.error && j.error.message) detail = j.error.message;
+    } catch (e) { /* keep raw */ }
+    throw new Error("Gemini APIエラー（" + res.status + "）: " + detail);
+  }
+  const data = await res.json();
+  const cand = data.candidates && data.candidates[0];
+  const out = cand && cand.content && cand.content.parts
+    ? cand.content.parts.map((p) => p.text || "").join("")
+    : "";
+  if (!out) throw new Error("APIから本文が返りませんでした。音声が長すぎるか、内容を処理できなかった可能性があります。");
+  return out;
+}
+
+function buildPrompt() {
+  const speakerNote = $("optSpeakers").checked
+    ? "話者を聞き分け、「話者1:」「話者2:」のように話者ごとに分けて書いてください。同じ話者には一貫して同じ番号を使ってください。"
+    : "話者の区別は付けず、発言をそのまま書き起こしてください。";
+  const sections = ["## 文字起こし\n発言をそのまま書き起こしてください。" + speakerNote + "タイムスタンプは付けないでください。"];
+  if ($("optClean").checked) sections.push("## 整文\n文字起こしを、意味を変えずに読みやすく整えてください。「えー」「あのー」などのフィラーを落とし、句読点と改行を整えてください。");
+  if ($("optSummary").checked) sections.push("## 要約\n全体の要点を300〜600字程度でまとめてください。必要に応じて箇条書きを使ってください。");
+  if ($("optTodo").checked) sections.push("## 決定事項・ToDo\n決まったことと、宿題（担当者や期限が分かれば併記）を箇条書きで挙げてください。無ければ「特になし」と書いてください。");
+  return "あなたは日本語の会議音声の文字起こし担当です。添付の音声を処理し、Markdown形式で、以下のセクション構成で出力してください。\n\n"
+    + sections.join("\n\n")
+    + "\n\n注意: 推測で内容を補わないでください。聞き取れない箇所は「（聞き取り不能）」と書いてください。セクションの見出しは指定どおりに書いてください。";
+}
+
+$("run").addEventListener("click", async () => {
+  const apiKey = apiKeyInput.value.trim();
+  const model = modelInput.value.trim() || "gemini-3.8-flash";
+  if (!apiKey) { setStatus("先にGemini APIキーを入力して「設定を保存」を押してください。", true); return; }
+  if (!selectedFile) { setStatus("音声ファイルを選んでください。", true); return; }
+  const btn = $("run");
+  btn.disabled = true;
+  resultCard.classList.add("hidden");
+  try {
+    const mime = mimeOf(selectedFile);
+    const prompt = buildPrompt();
+    let parts;
+    const INLINE_LIMIT = 15 * 1024 * 1024;
+    if (selectedFile.size <= INLINE_LIMIT) {
+      setStatus("音声を読み込んでいます…");
+      const b64 = await fileToBase64(selectedFile);
+      parts = [{ text: prompt }, { inlineData: { mimeType: mime, data: b64 } }];
+    } else {
+      setStatus("大きなファイルのため、ファイルをアップロードしています…");
+      const fileObj = await uploadViaFilesApi(selectedFile, apiKey, mime);
+      parts = [{ text: prompt }, { fileData: { mimeType: mime, fileUri: fileObj.uri } }];
+    }
+    setStatus("Geminiが処理しています。音声の長さによっては数分かかります…");
+    const out = await generate(apiKey, model, parts);
+    lastResult = out;
+    resultEl.textContent = out;
+    resultCard.classList.remove("hidden");
+    setStatus("完了しました。");
+  } catch (err) {
+    setStatus("エラーが発生しました。\n" + (err && err.message ? err.message : String(err)), true);
+  } finally {
+    btn.disabled = false;
+  }
+});
+
+// ---- result actions ----
+$("copyBtn").addEventListener("click", async () => {
+  try {
+    await navigator.clipboard.writeText(lastResult);
+    setStatus("全文をコピーしました。");
+  } catch (e) {
+    setStatus("コピーに失敗しました。結果のテキストを長押し/選択してコピーしてください。", true);
+  }
+});
+function download(name, text) {
+  const blob = new Blob([text], { type: "text/plain;charset=utf-8" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = name;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+}
+function baseName() {
+  const n = selectedFile ? selectedFile.name.replace(/\.[^.]+$/, "") : "transcript";
+  return n + "_文字起こし";
+}
+$("dlMd").addEventListener("click", () => download(baseName() + ".md", lastResult));
+$("dlTxt").addEventListener("click", () => download(baseName() + ".txt", lastResult));
+
+// ---- file:// warning ----
+if (location.protocol === "file:") $("fileWarn").classList.remove("hidden");
+
+// ---- microphone permission ----
+function micErrorMessage(e) {
+  const name = e && e.name ? e.name : "";
+  if (location.protocol === "file:") {
+    return "この開き方（ダウンロードしたファイルを直接表示）では、マイクの許可ダイアログ自体が出せません。公開URL（https://iidodo-com.github.io/mojiokoshi/）から開くか、ホーム画面にインストールしたアプリで試してください。";
+  }
+  if (name === "NotAllowedError") {
+    return "マイクが許可されませんでした。ブラウザのサイト設定（アドレスバー横のアイコン→「権限」）で、このサイトのマイクを「許可」にしてから、もう一度「マイクの許可を求める」を押してください。";
+  }
+  if (name === "NotFoundError" || name === "OverconstrainedError") {
+    return "使えるマイクが見つかりませんでした。マイク付きの機器で試してください。";
+  }
+  return "マイクを使えませんでした（" + (name || "不明なエラー") + "）。公開URL（https）で開いているか確認してください。";
+}
+async function requestMicPermission() {
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+    setStatus(micErrorMessage(null), true);
+    return;
+  }
+  try {
+    const s = await navigator.mediaDevices.getUserMedia({ audio: true });
+    s.getTracks().forEach((t) => t.stop());
+    setStatus("マイクの許可が得られました。「録音開始」やリアルタイムの「開始」を押してください。");
+  } catch (e) {
+    setStatus(micErrorMessage(e), true);
+  }
+}
+$("recPerm").addEventListener("click", requestMicPermission);
+$("livePerm").addEventListener("click", requestMicPermission);
+
+// ---- audio conversion helpers ----
+async function blobToWav(blob) {
+  const buf = await blob.arrayBuffer();
+  const AC = window.AudioContext || window.webkitAudioContext;
+  const ctx = new AC();
+  const decoded = await ctx.decodeAudioData(buf);
+  ctx.close();
+  const len = Math.max(1, Math.ceil(decoded.duration * 16000));
+  const off = new OfflineAudioContext(1, len, 16000);
+  const src = off.createBufferSource();
+  src.buffer = decoded;
+  src.connect(off.destination);
+  src.start();
+  const rendered = await off.startRendering();
+  return encodeWav(rendered.getChannelData(0), 16000);
+}
+function encodeWav(samples, sampleRate) {
+  const buffer = new ArrayBuffer(44 + samples.length * 2);
+  const v = new DataView(buffer);
+  const wstr = (off, s) => { for (let i = 0; i < s.length; i++) v.setUint8(off + i, s.charCodeAt(i)); };
+  wstr(0, "RIFF"); v.setUint32(4, 36 + samples.length * 2, true); wstr(8, "WAVE");
+  wstr(12, "fmt "); v.setUint32(16, 16, true); v.setUint16(20, 1, true); v.setUint16(22, 1, true);
+  v.setUint32(24, sampleRate, true); v.setUint32(28, sampleRate * 2, true); v.setUint16(32, 2, true); v.setUint16(34, 16, true);
+  wstr(36, "data"); v.setUint32(40, samples.length * 2, true);
+  let off = 44;
+  for (let i = 0; i < samples.length; i++, off += 2) {
+    const s = Math.max(-1, Math.min(1, samples[i]));
+    v.setInt16(off, s < 0 ? s * 0x8000 : s * 0x7fff, true);
+  }
+  return new Blob([buffer], { type: "audio/wav" });
+}
+async function toGeminiAudio(blob) {
+  const t = (blob.type || "").split(";")[0];
+  if (t === "audio/mp4") return { blob: blob, mime: "audio/mp4", ext: "m4a" };
+  if (t === "audio/aac") return { blob: blob, mime: "audio/aac", ext: "aac" };
+  const wav = await blobToWav(blob);
+  return { blob: wav, mime: "audio/wav", ext: "wav" };
+}
+function stampName(prefix, ext) {
+  const d = new Date();
+  const p = (n) => String(n).padStart(2, "0");
+  return prefix + "-" + d.getFullYear() + p(d.getMonth() + 1) + p(d.getDate()) + "-" + p(d.getHours()) + p(d.getMinutes()) + p(d.getSeconds()) + "." + ext;
+}
+function fmtTime(sec) {
+  const m = Math.floor(sec / 60), s = Math.floor(sec % 60);
+  return m + ":" + String(s).padStart(2, "0");
+}
+function pickRecMime() {
+  const cands = ["audio/mp4", "audio/aac", "audio/ogg;codecs=opus", "audio/webm;codecs=opus", "audio/webm"];
+  for (const c of cands) { try { if (MediaRecorder.isTypeSupported(c)) return c; } catch (e) { /* next */ } }
+  return "";
+}
+
+// ---- recording (single shot) ----
+let recStream = null, mediaRecorder = null, recChunks = [], recTimerId = null, recStartedAt = 0;
+$("recStart").addEventListener("click", async () => {
+  if (!navigator.mediaDevices || !window.MediaRecorder) {
+    setStatus("このブラウザでは録音が使えません。公開URL（https）で開いてください。", true);
+    return;
+  }
+  try {
+    recStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+  } catch (e) {
+    setStatus(micErrorMessage(e), true);
+    return;
+  }
+  recChunks = [];
+  const mt = pickRecMime();
+  mediaRecorder = mt ? new MediaRecorder(recStream, { mimeType: mt }) : new MediaRecorder(recStream);
+  mediaRecorder.ondataavailable = (e) => { if (e.data && e.data.size) recChunks.push(e.data); };
+  mediaRecorder.onstop = onRecStop;
+  mediaRecorder.start(1000);
+  recStartedAt = Date.now();
+  $("recStart").disabled = true;
+  $("recStop").disabled = false;
+  $("recState").innerHTML = "<span class=\"recdot\"></span>録音中 0:00";
+  recTimerId = setInterval(() => {
+    $("recState").innerHTML = "<span class=\"recdot\"></span>録音中 " + fmtTime((Date.now() - recStartedAt) / 1000);
+  }, 500);
+});
+$("recStop").addEventListener("click", () => {
+  if (mediaRecorder && mediaRecorder.state !== "inactive") mediaRecorder.stop();
+});
+async function onRecStop() {
+  clearInterval(recTimerId);
+  if (recStream) { recStream.getTracks().forEach((t) => t.stop()); recStream = null; }
+  $("recStart").disabled = false;
+  $("recStop").disabled = true;
+  const raw = new Blob(recChunks, { type: mediaRecorder.mimeType || "audio/webm" });
+  $("recState").textContent = "変換しています…";
+  try {
+    const conv = await toGeminiAudio(raw);
+    const f = new File([conv.blob], stampName("recording", conv.ext), { type: conv.mime });
+    setFile(f);
+    const pv = $("recPreview");
+    pv.src = URL.createObjectURL(raw);
+    pv.classList.remove("hidden");
+    $("recState").textContent = "録音をセットしました（" + fmtTime((Date.now() - recStartedAt) / 1000) + "）。「文字起こしを実行」を押してください。";
+  } catch (e) {
+    $("recState").textContent = "録音の変換に失敗しました。";
+    setStatus("録音の変換に失敗しました: " + (e.message || e), true);
+  }
+}
+
+// ---- live (chunked) transcription ----
+let liveActive = false, liveStream = null, liveText = "", liveStartedAt = 0;
+function livePrompt(prevTail) {
+  const sp = $("liveSpeakers").checked
+    ? "話者を聞き分け、「話者1:」「話者2:」のように分けてください。前後の区間と話者番号がなるべく一致するよう、直前の内容も参考にしてください。"
+    : "話者の区別は付けないでください。";
+  let p = "あなたは日本語音声の文字起こし担当です。添付の短い音声を、発言のまま日本語で書き起こしてください。本文だけを出力し、見出しや説明は付けないでください。聞き取れない場合は「（聞き取り不能）」としてください。" + sp;
+  if (prevTail) p += "\n直前の区間の書き起こし末尾（文脈の参考）: " + prevTail;
+  return p;
+}
+function recordOneChunk(stream, ms) {
+  return new Promise((resolve) => {
+    const mt = pickRecMime();
+    const mr = mt ? new MediaRecorder(stream, { mimeType: mt }) : new MediaRecorder(stream);
+    const chunks = [];
+    mr.ondataavailable = (e) => { if (e.data && e.data.size) chunks.push(e.data); };
+    mr.onstop = () => resolve(new Blob(chunks, { type: mr.mimeType || "audio/webm" }));
+    mr.start(1000);
+    setTimeout(() => { if (mr.state !== "inactive") mr.stop(); }, ms);
+  });
+}
+$("liveStart").addEventListener("click", async () => {
+  const apiKey = apiKeyInput.value.trim();
+  const model = modelInput.value.trim() || "gemini-3.8-flash";
+  if (!apiKey) { setStatus("先にGemini APIキーを入力して「設定を保存」を押してください。", true); return; }
+  if (!navigator.mediaDevices || !window.MediaRecorder) {
+    setStatus("このブラウザでは録音が使えません。公開URL（https）で開いてください。", true);
+    return;
+  }
+  try {
+    liveStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+  } catch (e) {
+    setStatus(micErrorMessage(e), true);
+    return;
+  }
+  liveActive = true;
+  liveText = "";
+  liveStartedAt = Date.now();
+  $("liveOut").textContent = "";
+  $("liveStart").disabled = true;
+  $("liveStop").disabled = false;
+  $("liveState").innerHTML = "<span class=\"recdot\"></span>録音・文字起こし中";
+  const intervalSec = parseInt($("liveInterval").value, 10) || 30;
+  let prevTail = "";
+  while (liveActive) {
+    const chunkStart = Date.now();
+    let raw;
+    try {
+      raw = await recordOneChunk(liveStream, intervalSec * 1000);
+    } catch (e) {
+      break;
+    }
+    if (!raw.size) { if (!liveActive) break; else continue; }
+    try {
+      const conv = await toGeminiAudio(raw);
+      if (conv.blob.size < 2000) continue;
+      const b64 = await fileToBase64(conv.blob);
+      const out = await generate(apiKey, model, [{ text: livePrompt(prevTail) }, { inlineData: { mimeType: conv.mime, data: b64 } }]);
+      const t = out.trim();
+      if (t) {
+        const block = "[" + fmtTime((chunkStart - liveStartedAt) / 1000) + "] " + t;
+        liveText += (liveText ? "\n" : "") + block;
+        prevTail = liveText.slice(-200);
+        $("liveOut").textContent = liveText;
+        $("liveOut").scrollTop = $("liveOut").scrollHeight;
+      }
+    } catch (e) {
+      liveText += (liveText ? "\n" : "") + "（この区間はエラー: " + (e.message || e) + "）";
+      $("liveOut").textContent = liveText;
+    }
+  }
+});
+$("liveStop").addEventListener("click", () => {
+  liveActive = false;
+  if (liveStream) { liveStream.getTracks().forEach((t) => t.stop()); liveStream = null; }
+  $("liveStart").disabled = false;
+  $("liveStop").disabled = true;
+  $("liveState").textContent = "終了しました。最後の区間が処理中の場合は、少し待つと表示されます。";
+});
+$("liveCopy").addEventListener("click", async () => {
+  try { await navigator.clipboard.writeText(liveText); setStatus("リアルタイム結果をコピーしました。"); }
+  catch (e) { setStatus("コピーに失敗しました。", true); }
+});
+$("liveDl").addEventListener("click", () => download(stampName("live", "txt"), liveText));
+</script>
+<script>
+if ("serviceWorker" in navigator && /^https?:$/.test(location.protocol)) {
+  window.addEventListener("load", () => {
+    navigator.serviceWorker.register("sw.js").catch(() => {});
+  });
+}
+</script>
+</body>
+</html>
