@@ -1,0 +1,371 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>文字起こしアプリ</title>
+<style>
+  :root {
+    --bg: #f6f7f9;
+    --card: #ffffff;
+    --text: #1f2328;
+    --sub: #57606a;
+    --accent: #1a73e8;
+    --accent-dark: #1557b0;
+    --border: #d8dee4;
+    --error: #b3261e;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Hiragino Kaku Gothic ProN", "Noto Sans JP", sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.7;
+  }
+  .wrap { max-width: 760px; margin: 0 auto; padding: 16px; }
+  header { padding: 12px 4px 4px; }
+  h1 { font-size: 22px; margin: 0 0 4px; }
+  .lead { color: var(--sub); font-size: 14px; margin: 0; }
+  .card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 16px;
+    margin-top: 16px;
+  }
+  .card h2 { font-size: 16px; margin: 0 0 10px; }
+  label { display: block; font-size: 14px; font-weight: 600; margin-top: 12px; }
+  label:first-of-type { margin-top: 0; }
+  input[type="password"], input[type="text"] {
+    width: 100%;
+    padding: 10px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    font-size: 15px;
+    margin-top: 4px;
+  }
+  .note { font-size: 12px; color: var(--sub); margin-top: 6px; }
+  .note a { color: var(--accent); }
+  button {
+    appearance: none;
+    border: none;
+    border-radius: 8px;
+    padding: 10px 16px;
+    font-size: 15px;
+    font-weight: 600;
+    cursor: pointer;
+    background: var(--accent);
+    color: #fff;
+  }
+  button:hover { background: var(--accent-dark); }
+  button:disabled { background: #a8c7fa; cursor: not-allowed; }
+  button.sub {
+    background: #eef1f4;
+    color: var(--text);
+    border: 1px solid var(--border);
+  }
+  button.sub:hover { background: #e3e8ed; }
+  .row { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
+  .drop {
+    border: 2px dashed var(--border);
+    border-radius: 12px;
+    padding: 20px;
+    text-align: center;
+    color: var(--sub);
+    font-size: 14px;
+    cursor: pointer;
+  }
+  .drop.over { border-color: var(--accent); color: var(--accent); }
+  .fileinfo { font-size: 14px; margin-top: 10px; word-break: break-all; }
+  .checks { margin-top: 12px; }
+  .checks label { font-weight: 400; margin-top: 6px; display: flex; align-items: center; gap: 8px; }
+  .checks input[type="checkbox"] { width: 18px; height: 18px; }
+  #status { font-size: 14px; margin-top: 12px; min-height: 1.5em; }
+  #status.error { color: var(--error); white-space: pre-wrap; }
+  #result {
+    white-space: pre-wrap;
+    word-break: break-word;
+    font-size: 15px;
+    background: #fbfcfd;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 12px;
+    margin-top: 8px;
+  }
+  #result:empty { display: none; }
+  .hidden { display: none; }
+  footer { color: var(--sub); font-size: 12px; text-align: center; padding: 24px 0 8px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>文字起こしアプリ</h1>
+    <p class="lead">録音ファイルを渡すと、Gemini API（無料枠）で文字起こし・整文・要約を作成します。音声はGoogleのAPIに直接送られ、このページ以外に保存されません。</p>
+  </header>
+
+  <section class="card">
+    <h2>設定</h2>
+    <label for="apiKey">Gemini APIキー</label>
+    <input type="password" id="apiKey" placeholder="AIza..." autocomplete="off">
+    <p class="note">キーはこのブラウザ内にのみ保存されます（サーバーやリポジトリには送られません）。取得は <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">Google AI Studio</a> から（Googleアカウントで発行できます）。</p>
+    <label for="model">モデル名</label>
+    <input type="text" id="model" value="gemini-2.5-flash">
+    <p class="note">通常はこのままで構いません。モデルが提供終了になった場合は、新しいモデル名に書き換えてください。</p>
+    <div class="row">
+      <button type="button" id="saveSettings" class="sub">設定を保存</button>
+      <span id="savedMsg" class="note" style="align-self:center;"></span>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>音声ファイル</h2>
+    <div class="drop" id="drop">タップして音声ファイルを選ぶ<br>（m4a / mp3 / wav / aac / ogg / flac など）</div>
+    <input type="file" id="fileInput" accept="audio/*" class="hidden">
+    <div class="fileinfo" id="fileInfo"></div>
+
+    <div class="checks">
+      <label><input type="checkbox" id="optClean" checked> 整文も作る（フィラーを落として読みやすく）</label>
+      <label><input type="checkbox" id="optSummary" checked> 要約も作る</label>
+      <label><input type="checkbox" id="optTodo" checked> 決定事項・ToDoも抽出する</label>
+    </div>
+
+    <div class="row">
+      <button type="button" id="run">文字起こしを実行</button>
+    </div>
+    <div id="status"></div>
+  </section>
+
+  <section class="card hidden" id="resultCard">
+    <h2>結果</h2>
+    <div class="row" style="margin-top:0;">
+      <button type="button" id="copyBtn" class="sub">全文をコピー</button>
+      <button type="button" id="dlMd" class="sub">.md で保存</button>
+      <button type="button" id="dlTxt" class="sub">.txt で保存</button>
+    </div>
+    <div id="result"></div>
+  </section>
+
+  <footer>Powered by Gemini API（無料枠）。長い音声は数十分までが目安です。</footer>
+</div>
+
+<script>
+"use strict";
+const $ = (id) => document.getElementById(id);
+const apiKeyInput = $("apiKey");
+const modelInput = $("model");
+const statusEl = $("status");
+const resultEl = $("result");
+const resultCard = $("resultCard");
+let selectedFile = null;
+let lastResult = "";
+
+// ---- settings ----
+function loadSettings() {
+  const k = localStorage.getItem("gemini_api_key");
+  if (k) apiKeyInput.value = k;
+  const m = localStorage.getItem("gemini_model");
+  if (m) modelInput.value = m;
+}
+$("saveSettings").addEventListener("click", () => {
+  localStorage.setItem("gemini_api_key", apiKeyInput.value.trim());
+  localStorage.setItem("gemini_model", modelInput.value.trim() || "gemini-2.5-flash");
+  $("savedMsg").textContent = "保存しました。";
+  setTimeout(() => { $("savedMsg").textContent = ""; }, 2000);
+});
+loadSettings();
+
+// ---- file selection ----
+const drop = $("drop");
+const fileInput = $("fileInput");
+drop.addEventListener("click", () => fileInput.click());
+drop.addEventListener("dragover", (e) => { e.preventDefault(); drop.classList.add("over"); });
+drop.addEventListener("dragleave", () => drop.classList.remove("over"));
+drop.addEventListener("drop", (e) => {
+  e.preventDefault();
+  drop.classList.remove("over");
+  if (e.dataTransfer.files.length) setFile(e.dataTransfer.files[0]);
+});
+fileInput.addEventListener("change", () => {
+  if (fileInput.files.length) setFile(fileInput.files[0]);
+});
+function setFile(f) {
+  selectedFile = f;
+  const mb = (f.size / 1024 / 1024).toFixed(1);
+  $("fileInfo").textContent = "選択中: " + f.name + "（" + mb + " MB）";
+}
+function mimeOf(f) {
+  if (f.type) return f.type;
+  const name = (f.name || "").toLowerCase();
+  if (name.endsWith(".m4a")) return "audio/mp4";
+  if (name.endsWith(".mp3")) return "audio/mpeg";
+  if (name.endsWith(".wav")) return "audio/wav";
+  if (name.endsWith(".aac")) return "audio/aac";
+  if (name.endsWith(".ogg")) return "audio/ogg";
+  if (name.endsWith(".flac")) return "audio/flac";
+  if (name.endsWith(".aiff") || name.endsWith(".aif")) return "audio/aiff";
+  return "audio/mp4";
+}
+
+// ---- helpers ----
+function setStatus(msg, isError) {
+  statusEl.textContent = msg || "";
+  statusEl.className = isError ? "error" : "";
+}
+function fileToBase64(f) {
+  return new Promise((resolve, reject) => {
+    const r = new FileReader();
+    r.onload = () => resolve(String(r.result).split(",")[1]);
+    r.onerror = reject;
+    r.readAsDataURL(f);
+  });
+}
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+// ---- Files API (for large files) ----
+async function uploadViaFilesApi(f, apiKey, mime) {
+  const startRes = await fetch("https://generativelanguage.googleapis.com/upload/v1beta/files", {
+    method: "POST",
+    headers: {
+      "x-goog-api-key": apiKey,
+      "X-Goog-Upload-Protocol": "resumable",
+      "X-Goog-Upload-Command": "start",
+      "X-Goog-Upload-Header-Content-Length": String(f.size),
+      "X-Goog-Upload-Header-Content-Type": mime,
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({ file: { display_name: f.name } })
+  });
+  if (!startRes.ok) throw new Error("ファイルアップロードの開始に失敗しました: " + (await startRes.text()));
+  const uploadUrl = startRes.headers.get("x-goog-upload-url");
+  if (!uploadUrl) throw new Error("アップロードURLが取得できませんでした。");
+
+  const upRes = await fetch(uploadUrl, {
+    method: "POST",
+    headers: {
+      "Content-Length": String(f.size),
+      "X-Goog-Upload-Offset": "0",
+      "X-Goog-Upload-Command": "upload, finalize"
+    },
+    body: f
+  });
+  if (!upRes.ok) throw new Error("ファイルのアップロードに失敗しました: " + (await upRes.text()));
+  const info = await upRes.json();
+  let fileObj = info.file;
+  // wait until ACTIVE
+  for (let i = 0; i < 60 && fileObj && fileObj.state === "PROCESSING"; i++) {
+    await sleep(5000);
+    const chk = await fetch("https://generativelanguage.googleapis.com/v1beta/" + fileObj.name, {
+      headers: { "x-goog-api-key": apiKey }
+    });
+    if (!chk.ok) throw new Error("ファイル状態の確認に失敗しました: " + (await chk.text()));
+    fileObj = await chk.json();
+  }
+  if (!fileObj || fileObj.state !== "ACTIVE") {
+    throw new Error("ファイルの処理が完了しませんでした（状態: " + (fileObj ? fileObj.state : "不明") + "）");
+  }
+  return fileObj;
+}
+
+// ---- main ----
+async function generate(apiKey, model, parts) {
+  const res = await fetch("https://generativelanguage.googleapis.com/v1beta/models/" + encodeURIComponent(model) + ":generateContent", {
+    method: "POST",
+    headers: {
+      "x-goog-api-key": apiKey,
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({
+      contents: [{ parts: parts }],
+      generationConfig: { maxOutputTokens: 65536 }
+    })
+  });
+  if (!res.ok) {
+    let detail = await res.text();
+    try {
+      const j = JSON.parse(detail);
+      if (j.error && j.error.message) detail = j.error.message;
+    } catch (e) { /* keep raw */ }
+    throw new Error("Gemini APIエラー（" + res.status + "）: " + detail);
+  }
+  const data = await res.json();
+  const cand = data.candidates && data.candidates[0];
+  const out = cand && cand.content && cand.content.parts
+    ? cand.content.parts.map((p) => p.text || "").join("")
+    : "";
+  if (!out) throw new Error("APIから本文が返りませんでした。音声が長すぎるか、内容を処理できなかった可能性があります。");
+  return out;
+}
+
+function buildPrompt() {
+  const sections = ["## 文字起こし\n発言をそのまま書き起こしてください。話者が判別できる場合は「話者1:」「話者2:」のように分けてください。タイムスタンプは付けないでください。"];
+  if ($("optClean").checked) sections.push("## 整文\n文字起こしを、意味を変えずに読みやすく整えてください。「えー」「あのー」などのフィラーを落とし、句読点と改行を整えてください。");
+  if ($("optSummary").checked) sections.push("## 要約\n全体の要点を300〜600字程度でまとめてください。必要に応じて箇条書きを使ってください。");
+  if ($("optTodo").checked) sections.push("## 決定事項・ToDo\n決まったことと、宿題（担当者や期限が分かれば併記）を箇条書きで挙げてください。無ければ「特になし」と書いてください。");
+  return "あなたは日本語の会議音声の文字起こし担当です。添付の音声を処理し、Markdown形式で、以下のセクション構成で出力してください。\n\n"
+    + sections.join("\n\n")
+    + "\n\n注意: 推測で内容を補わないでください。聞き取れない箇所は「（聞き取り不能）」と書いてください。セクションの見出しは指定どおりに書いてください。";
+}
+
+$("run").addEventListener("click", async () => {
+  const apiKey = apiKeyInput.value.trim();
+  const model = modelInput.value.trim() || "gemini-2.5-flash";
+  if (!apiKey) { setStatus("先にGemini APIキーを入力して「設定を保存」を押してください。", true); return; }
+  if (!selectedFile) { setStatus("音声ファイルを選んでください。", true); return; }
+  const btn = $("run");
+  btn.disabled = true;
+  resultCard.classList.add("hidden");
+  try {
+    const mime = mimeOf(selectedFile);
+    const prompt = buildPrompt();
+    let parts;
+    const INLINE_LIMIT = 15 * 1024 * 1024;
+    if (selectedFile.size <= INLINE_LIMIT) {
+      setStatus("音声を読み込んでいます…");
+      const b64 = await fileToBase64(selectedFile);
+      parts = [{ text: prompt }, { inlineData: { mimeType: mime, data: b64 } }];
+    } else {
+      setStatus("大きなファイルのため、ファイルをアップロードしています…");
+      const fileObj = await uploadViaFilesApi(selectedFile, apiKey, mime);
+      parts = [{ text: prompt }, { fileData: { mimeType: mime, fileUri: fileObj.uri } }];
+    }
+    setStatus("Geminiが処理しています。音声の長さによっては数分かかります…");
+    const out = await generate(apiKey, model, parts);
+    lastResult = out;
+    resultEl.textContent = out;
+    resultCard.classList.remove("hidden");
+    setStatus("完了しました。");
+  } catch (err) {
+    setStatus("エラーが発生しました。\n" + (err && err.message ? err.message : String(err)), true);
+  } finally {
+    btn.disabled = false;
+  }
+});
+
+// ---- result actions ----
+$("copyBtn").addEventListener("click", async () => {
+  try {
+    await navigator.clipboard.writeText(lastResult);
+    setStatus("全文をコピーしました。");
+  } catch (e) {
+    setStatus("コピーに失敗しました。結果のテキストを長押し/選択してコピーしてください。", true);
+  }
+});
+function download(name, text) {
+  const blob = new Blob([text], { type: "text/plain;charset=utf-8" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = name;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+}
+function baseName() {
+  const n = selectedFile ? selectedFile.name.replace(/\.[^.]+$/, "") : "transcript";
+  return n + "_文字起こし";
+}
+$("dlMd").addEventListener("click", () => download(baseName() + ".md", lastResult));
+$("dlTxt").addEventListener("click", () => download(baseName() + ".txt", lastResult));
+</script>
+</body>
+</html>
