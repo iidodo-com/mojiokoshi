@@ -207,7 +207,7 @@
     <div id="result"></div>
   </section>
 
-  <footer>Powered by Gemini API（無料枠）。長い音声は数十分までが目安です。<br>アプリの版: v6</footer>
+  <footer>Powered by Gemini API（無料枠）。長い音声は数十分までが目安です。<br>アプリの版: v7</footer>
 </div>
 
 <script>
@@ -387,10 +387,17 @@ async function generate(apiKey, model, parts) {
   for (let i = 0; i < attempts.length; i++) {
     try {
       res = await fetch(attempts[i].url, { method: "POST", headers: attempts[i].headers, body: body });
-      break;
     } catch (e) {
+      res = null;
       if (i < attempts.length - 1) await sleep(1500);
+      continue;
     }
+    // Busy / rate-limited: wait and retry with the next attempt.
+    if (res && (res.status === 503 || res.status === 429) && i < attempts.length - 1) {
+      await sleep(i === 0 ? 4000 : 10000);
+      continue;
+    }
+    break;
   }
   if (!res) {
     throw new Error("通信に失敗しました（Failed to fetch）。この端末からGoogleのAPIへ届いていません。対処: (1) Chromeで公開URLを開き直す（アプリ内ブラウザやファイル表示では通信が制限されることがあります） (2) Wi-Fiを切ってモバイル回線で試す (3) VPN・広告ブロック・ブラウザのシールド機能を切る。設定の「接続テスト」でも切り分けできます。");
@@ -401,6 +408,8 @@ async function generate(apiKey, model, parts) {
       const j = JSON.parse(detail);
       if (j.error && j.error.message) detail = j.error.message;
     } catch (e) { /* keep raw */ }
+    if (res.status === 503) detail = "Googleのモデルが混雑しています。一時的なものなので、数分待ってから再試行してください（詳細: " + detail + "）";
+    if (res.status === 429) detail = "利用上限に達した可能性があります。少し時間をおいてから再試行してください（詳細: " + detail + "）";
     throw new Error("Gemini APIエラー（" + res.status + "）: " + detail);
   }
   const data = await res.json();
