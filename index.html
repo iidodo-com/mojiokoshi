@@ -111,7 +111,7 @@
     <input type="password" id="apiKey" placeholder="AIza..." autocomplete="off">
     <p class="note">キーはこのブラウザ内にのみ保存されます（サーバーやリポジトリには送られません）。取得は <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">Google AI Studio</a> から（Googleアカウントで発行できます）。</p>
     <label for="model">モデル名</label>
-    <input type="text" id="model" value="gemini-2.5-flash">
+    <input type="text" id="model" value="gemini-3.8-flash">
     <p class="note">通常はこのままで構いません。モデルが提供終了になった場合は、新しいモデル名に書き換えてください。</p>
     <div class="row">
       <button type="button" id="saveSettings" class="sub">設定を保存</button>
@@ -170,7 +170,7 @@ function loadSettings() {
 }
 $("saveSettings").addEventListener("click", () => {
   localStorage.setItem("gemini_api_key", apiKeyInput.value.trim());
-  localStorage.setItem("gemini_model", modelInput.value.trim() || "gemini-2.5-flash");
+  localStorage.setItem("gemini_model", modelInput.value.trim() || "gemini-3.8-flash");
   $("savedMsg").textContent = "保存しました。";
   setTimeout(() => { $("savedMsg").textContent = ""; }, 2000);
 });
@@ -310,7 +310,7 @@ function buildPrompt() {
 
 $("run").addEventListener("click", async () => {
   const apiKey = apiKeyInput.value.trim();
-  const model = modelInput.value.trim() || "gemini-2.5-flash";
+  const model = modelInput.value.trim() || "gemini-3.8-flash";
   if (!apiKey) { setStatus("先にGemini APIキーを入力して「設定を保存」を押してください。", true); return; }
   if (!selectedFile) { setStatus("音声ファイルを選んでください。", true); return; }
   const btn = $("run");
