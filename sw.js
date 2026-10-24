@@ -1,4 +1,4 @@
-const CACHE = "mojiokoshi-v4";
+const CACHE = "mojiokoshi-v5";
 const ASSETS = [
   "./",
   "./index.html",
@@ -25,6 +25,19 @@ self.addEventListener("activate", (e) => {
 self.addEventListener("fetch", (e) => {
   const url = new URL(e.request.url);
   if (e.request.method !== "GET" || url.origin !== location.origin) return;
+  // Page documents: network-first so updates apply on the next load.
+  if (e.request.mode === "navigate") {
+    e.respondWith(
+      fetch(e.request).then((res) => {
+        if (res && res.ok) {
+          const copy = res.clone();
+          caches.open(CACHE).then((c) => c.put("./index.html", copy));
+        }
+        return res;
+      }).catch(() => caches.match("./index.html", { ignoreSearch: true }))
+    );
+    return;
+  }
   e.respondWith(
     caches.match(e.request, { ignoreSearch: true }).then((hit) => {
       const net = fetch(e.request).then((res) => {
