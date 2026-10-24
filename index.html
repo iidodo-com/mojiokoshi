@@ -134,6 +134,11 @@
       <button type="button" id="saveSettings" class="sub">設定を保存</button>
       <span id="savedMsg" class="note" style="align-self:center;"></span>
     </div>
+    <div class="row">
+      <button type="button" id="testConn" class="sub">接続テスト</button>
+      <span id="testMsg" class="note" style="align-self:center;"></span>
+    </div>
+    <p class="note">「Failed to fetch」が出るときは、このテストで「端末からGoogleへ届くか」を切り分けできます。</p>
   </section>
 
   <section class="card">
@@ -231,6 +236,27 @@ $("saveSettings").addEventListener("click", () => {
 });
 loadSettings();
 
+// ---- connection test ----
+$("testConn").addEventListener("click", async () => {
+  const apiKey = apiKeyInput.value.trim();
+  const model = modelInput.value.trim() || "gemini-3.8-flash";
+  const el = $("testMsg");
+  if (!apiKey) { el.textContent = "先にAPIキーを入力してください。"; return; }
+  el.textContent = "テスト中…";
+  try {
+    const r = await fetch("https://generativelanguage.googleapis.com/v1beta/models/" + encodeURIComponent(model) + "?key=" + encodeURIComponent(apiKey), { method: "GET" });
+    if (r.ok) {
+      el.textContent = "接続OK（キーとモデルが有効です）。";
+    } else {
+      let d = "";
+      try { const j = await r.json(); d = j.error && j.error.message ? j.error.message : ""; } catch (e) { /* ignore */ }
+      el.textContent = "応答はありましたがエラーです（" + r.status + "）" + (d ? ": " + d : "");
+    }
+  } catch (e) {
+    el.textContent = "通信できませんでした。この端末・ブラウザからGoogleのAPIへ届いていません。Chromeで開き直す、Wi-Fiを切ってモバイル回線にする、VPNやシールドを切る、を試してください。";
+  }
+});
+
 // ---- file selection ----
 const drop = $("drop");
 const fileInput = $("fileInput");
@@ -325,27 +351,27 @@ async function uploadViaFilesApi(f, apiKey, mime) {
 
 // ---- main ----
 async function generate(apiKey, model, parts) {
+  const base = "https://generativelanguage.googleapis.com/v1beta/models/" + encodeURIComponent(model) + ":generateContent";
+  const body = JSON.stringify({
+    contents: [{ parts: parts }],
+    generationConfig: { maxOutputTokens: 65536 }
+  });
+  const attempts = [
+    { url: base, headers: { "x-goog-api-key": apiKey, "Content-Type": "application/json" } },
+    { url: base, headers: { "x-goog-api-key": apiKey, "Content-Type": "application/json" } },
+    { url: base + "?key=" + encodeURIComponent(apiKey), headers: { "Content-Type": "application/json" } }
+  ];
   let res = null;
-  for (let attempt = 0; attempt < 2; attempt++) {
+  for (let i = 0; i < attempts.length; i++) {
     try {
-      res = await fetch("https://generativelanguage.googleapis.com/v1beta/models/" + encodeURIComponent(model) + ":generateContent", {
-        method: "POST",
-        headers: {
-          "x-goog-api-key": apiKey,
-          "Content-Type": "application/json"
-        },
-        body: JSON.stringify({
-          contents: [{ parts: parts }],
-          generationConfig: { maxOutputTokens: 65536 }
-        })
-      });
+      res = await fetch(attempts[i].url, { method: "POST", headers: attempts[i].headers, body: body });
       break;
     } catch (e) {
-      if (attempt === 1) {
-        throw new Error("通信に失敗しました（Failed to fetch）。電波の良い場所で再試行してください。ダウンロードしたHTMLファイルを直接開いている場合は、ブラウザの制限で通信できないことがあります。その場合は公開URLから開くか、インストールしたアプリで使ってください。");
-      }
-      await sleep(2000);
+      if (i < attempts.length - 1) await sleep(1500);
     }
+  }
+  if (!res) {
+    throw new Error("通信に失敗しました（Failed to fetch）。この端末からGoogleのAPIへ届いていません。対処: (1) Chromeで公開URLを開き直す（アプリ内ブラウザやファイル表示では通信が制限されることがあります） (2) Wi-Fiを切ってモバイル回線で試す (3) VPN・広告ブロック・ブラウザのシールド機能を切る。設定の「接続テスト」でも切り分けできます。");
   }
   if (!res.ok) {
     let detail = await res.text();
