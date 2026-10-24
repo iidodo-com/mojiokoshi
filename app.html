@@ -207,7 +207,7 @@
     <div id="result"></div>
   </section>
 
-  <footer>Powered by Gemini API（無料枠）。長い音声は数十分までが目安です。<br>アプリの版: v7</footer>
+  <footer>Powered by Gemini API（無料枠）。長い音声は数十分までが目安です。<br>アプリの版: v8</footer>
 </div>
 
 <script>
@@ -722,6 +722,21 @@ $("liveCopy").addEventListener("click", async () => {
   catch (e) { setStatus("コピーに失敗しました。", true); }
 });
 $("liveDl").addEventListener("click", () => download(stampName("live", "txt"), liveText));
+
+// ---- auto-load a file given by ?file=name (same directory only; used for tests/samples) ----
+(function () {
+  try {
+    const q = new URLSearchParams(location.search).get("file");
+    if (q && /^[A-Za-z0-9._-]+$/.test(q)) {
+      fetch(q).then((r) => { if (!r.ok) throw new Error("not found"); return r.blob(); })
+        .then((b) => {
+          setFile(new File([b], q, { type: b.type || "audio/mpeg" }));
+          setStatus("URL指定のファイルを読み込みました: " + q);
+        })
+        .catch(() => setStatus("URL指定のファイルを読めませんでした: " + q, true));
+    }
+  } catch (e) { /* ignore */ }
+})();
 </script>
 <script>
 if ("serviceWorker" in navigator && /^https?:$/.test(location.protocol)) {
